@@ -17,7 +17,7 @@ app.get("/download", (req, res) => {
   res.send("Download endpoint");
 })
 app.post("/download", async (req, res) => {
-  const { urlList } = req.body; // Expecting a list of URLs from the frontend
+  const { urlList, cookies } = req.body; // Expecting a list of URLs from the frontend
 
   if (!urlList || urlList.length === 0) {
     return res.status(400).json({ message: "Video URLs are required" });
@@ -37,6 +37,7 @@ app.post("/download", async (req, res) => {
       console.log(`Starting download for: ${url}`);
   
       const ytDlp = spawn("yt-dlp", [
+        "--cookies",
         "-f",
         "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
         "--merge-output-format",
@@ -45,6 +46,9 @@ app.post("/download", async (req, res) => {
         "D:\\yt-dlp-downloads\\%(title)s.%(ext)s",
         url,
       ]);
+
+      ytDlp.stdin.write(cookies);
+      ytDlp.stdin.end();
       
   
       ytDlp.stderr.on("data", (data) => {
