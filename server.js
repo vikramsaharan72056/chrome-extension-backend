@@ -2,6 +2,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const { spawn } = require("child_process");
 const cors = require("cors");
+const fs = require("fs");
 
 const app = express();
 const PORT = 5000;
@@ -12,12 +13,16 @@ app.use(bodyParser.json());
 // Global variable to store progress for each URL
 let progressMap = {};
 
+// Path to the static cookies file
+const cookiesFilePath = "cookies.txt"; // Replace this with the actual path to your cookies.txt file
+
 // Download endpoint
 app.get("/download", (req, res) => {
   res.send("Download endpoint");
-})
+});
+
 app.post("/download", async (req, res) => {
-  const { urlList, cookies } = req.body; // Expecting a list of URLs from the frontend
+  const { urlList } = req.body; // Expecting a list of URLs from the frontend
 
   if (!urlList || urlList.length === 0) {
     return res.status(400).json({ message: "Video URLs are required" });
@@ -31,13 +36,47 @@ app.post("/download", async (req, res) => {
     progressMap[url] = 0; // Initialize progress for each URL
   });
 
+  // Function to extract individual video URLs from a playlist
+  const extractPlaylistVideos = (playlistUrl) =>
+    new Promise((resolve, reject) => {
+      const ytDlp = spawn("yt-dlp", [
+        "-j", // JSON output
+        "--flat-playlist", // Extract video URLs without downloading
+        playlistUrl,
+      ]);
+
+      let data = "";
+
+      ytDlp.stdout.on("data", (chunk) => {
+        data += chunk;
+      });
+
+      ytDlp.stderr.on("data", (err) => {
+        console.error(`Error extracting playlist: ${err}`);
+      });
+
+      ytDlp.on("close", (code) => {
+        if (code === 0) {
+          // Parse the JSON and extract video URLs
+          const videoUrls = data
+            .split("\n")
+            .filter((line) => line.trim() !== "")
+            .map((line) => JSON.parse(line).url);
+          resolve(videoUrls);
+        } else {
+          reject(new Error("Failed to extract playlist videos"));
+        }
+      });
+    });
+
   // Function to download a single video
   const downloadVideo = (url) =>
     new Promise((resolve, reject) => {
       console.log(`Starting download for: ${url}`);
-  
+
       const ytDlp = spawn("yt-dlp", [
         "--cookies",
+        cookiesFilePath, // Static cookies for authentication
         "-f",
         "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
         "--merge-output-format",
@@ -47,35 +86,42 @@ app.post("/download", async (req, res) => {
         url,
       ]);
 
-      ytDlp.stdin.write(cookies);
-      ytDlp.stdin.end();
-      
-  
       ytDlp.stderr.on("data", (data) => {
         const message = data.toString();
         console.error(`Stderr for ${url}: ${message}`);
+
+        // Track progress percentage
+        const progressMatch = message.match(/(\d+\.\d+)%/);
+        if (progressMatch) {
+          progressMap[url] = parseFloat(progressMatch[1]);
+        }
       });
-  
+
       ytDlp.on("close", (code) => {
         if (code === 0) {
           console.log(`Download complete for: ${url}`);
+          progressMap[url] = 100; // Mark as complete
           resolve();
-        } else if (code === 1) {
-          console.error(`Download failed for ${url} due to file lock. Retrying...`);
-          // Retry after a small delay
-          setTimeout(() => downloadVideo(url).then(resolve).catch(reject), 1000);
         } else {
           console.error(`Download failed for ${url} with code: ${code}`);
+          progressMap[url] = -1; // Mark as failed
           reject(new Error(`Download failed for ${url}`));
         }
       });
     });
-  
 
-  // Download all videos in sequence
+  // Process all videos or playlists
   try {
     for (const url of urlList) {
-      await downloadVideo(url);
+      if (url.includes("list=")) {
+        console.log(`Extracting videos from playlist: ${url}`);
+        const playlistVideos = await extractPlaylistVideos(url);
+        for (const videoUrl of playlistVideos) {
+          await downloadVideo(videoUrl);
+        }
+      } else {
+        await downloadVideo(url);
+      }
     }
     res.status(200).json({ message: "All downloads completed successfully" });
   } catch (error) {
