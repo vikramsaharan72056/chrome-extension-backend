@@ -13,6 +13,9 @@ app.use(bodyParser.json());
 let progressMap = {};
 
 // Download endpoint
+app.get("/download", (req, res) => {
+  res.send("Download endpoint");
+})
 app.post("/download", async (req, res) => {
   const { urlList } = req.body; // Expecting a list of URLs from the frontend
 
