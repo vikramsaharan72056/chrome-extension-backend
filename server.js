@@ -111,17 +111,33 @@ app.post("/download", async (req, res) => {
     });
 
   // Process all videos or playlists
-  try {
-    for (const url of urlList) {
-      if (url.includes("list=")) {
-        console.log(`Extracting videos from playlist: ${url}`);
+  const processUrl = async (url) => {
+    const urlParams = new URLSearchParams(new URL(url).search);
+    const isPlaylist = urlParams.has("list");
+    const index = urlParams.get("index");
+
+    if (isPlaylist) {
+      if (index && index !== "1") {
+        // If "index" exists and is not "1", download only that video
+        console.log(`Downloading single video from playlist: ${url}`);
+        await downloadVideo(url);
+      } else {
+        // If "index=1" or no "index", download all videos in the playlist
+        console.log(`Downloading all videos from playlist: ${url}`);
         const playlistVideos = await extractPlaylistVideos(url);
         for (const videoUrl of playlistVideos) {
           await downloadVideo(videoUrl);
         }
-      } else {
-        await downloadVideo(url);
       }
+    } else {
+      // If not a playlist, download a single video
+      await downloadVideo(url);
+    }
+  };
+
+  try {
+    for (const url of urlList) {
+      await processUrl(url);
     }
     res.status(200).json({ message: "All downloads completed successfully" });
   } catch (error) {
