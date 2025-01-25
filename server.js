@@ -39,7 +39,7 @@ app.post("/download", async (req, res) => {
         "--merge-output-format",
         "mp4",
         "-o",
-        "C:\\Users\\vikra\\Downloads\\yt-dlp-downloads\\%(title)s.%(ext)s",
+        "D:\\yt-dlp-downloads\\%(title)s.%(ext)s",
         url,
       ]);
       
